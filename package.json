@@ -6,10 +6,20 @@
     "dev": "bun run --watch src/index.ts"
   },
   "dependencies": {
+    "consola": "^3.2.3",
     "elysia": "latest"
   },
   "devDependencies": {
-    "bun-types": "latest"
+    "@line/bot-sdk": "^8.2.0",
+    "@typescript-eslint/parser": "^6.19.1",
+    "bun-types": "latest",
+    "eslint": "^8.56.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-import": "^2.29.1",
+    "eslint-plugin-prettier": "^5.1.3",
+    "eslint-plugin-simple-import-sort": "^10.0.0",
+    "eslint-plugin-unused-imports": "^3.0.0",
+    "prettier": "^3.2.4"
   },
   "module": "src/index.js"
 }
