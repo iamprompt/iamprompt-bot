@@ -6,8 +6,11 @@
     "dev": "bun run --watch src/index.ts"
   },
   "dependencies": {
+    "@elysiajs/cron": "^0.8.0",
     "consola": "^3.2.3",
-    "elysia": "latest"
+    "dayjs": "^1.11.10",
+    "elysia": "latest",
+    "mongoose": "^8.1.1"
   },
   "devDependencies": {
     "@line/bot-sdk": "^8.2.0",
