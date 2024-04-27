@@ -1,10 +1,9 @@
 import Elysia from 'elysia'
 
 import { ctx } from '@/context'
-import { getKerryTrackingFlexMessage } from '@/data/line/template/kerryTrackingTemplate'
+import { HandleQueryParcelKerryStatus } from '@/modules/parcel'
+import { defineTextIntent, Intent } from '@/modules/webhook'
 import { lineWebhookValidator } from '@/plugins'
-import { reply } from '@/utils/line'
-import { getKerryTracking } from '@/utils/parcel/kerry'
 
 export const lineController = new Elysia({
   prefix: '/line',
@@ -20,29 +19,12 @@ export const lineController = new Elysia({
           if (event.type === 'message' && event.message.type === 'text') {
             const { replyToken, message } = event
 
-            if (message.text.startsWith('[Kerry]')) {
-              const parcelId = message.text.replace('[Kerry]', '').trim()
+            const intent = defineTextIntent(message)
 
-              const parcelTracking = await getKerryTracking(parcelId)
-
-              if (!parcelTracking) {
-                await reply(replyToken, [{ type: 'text', text: 'ไม่พบพัสดุ' }], accessToken)
-                continue
-              }
-
-              const latestStatus = parcelTracking.status[0]
-
-              await reply(
-                replyToken,
-                [
-                  {
-                    type: 'flex',
-                    altText: `[Kerry] พัสดุของคุณ ${parcelTracking.shipment.consignment} มีสถานะ ${latestStatus.description}`,
-                    contents: getKerryTrackingFlexMessage(parcelTracking),
-                  },
-                ],
-                accessToken,
-              )
+            switch (intent) {
+              case Intent.KERRY_TRACKING_STATUS:
+                await HandleQueryParcelKerryStatus(message.text, replyToken, accessToken)
+                break
             }
           }
         } catch (error) {

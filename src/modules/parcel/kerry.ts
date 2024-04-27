@@ -4,7 +4,7 @@ import consola from 'consola'
 import { getKerryTrackingFlexMessage } from '@/data/line/template/kerryTrackingTemplate'
 import { LineBot, ParcelTracking } from '@/db/models'
 import { KerryTrackingPayload } from '@/types/parcel/kerry'
-import { push } from '@/utils/line'
+import { push, reply } from '@/utils/line'
 import { getKerryTracking } from '@/utils/parcel/kerry'
 
 /**
@@ -93,11 +93,26 @@ export const UpdateParcelKerryJob = async () => {
   }
 }
 
+export const HandleQueryParcelKerryStatus = async (text: string, replyToken: string, accessToken: string) => {
+  const parcelId = text.replace('[Kerry]', '').trim()
+
+  const parcelTracking = await getKerryTracking(parcelId)
+
+  if (!parcelTracking) {
+    await reply(replyToken, [{ type: 'text', text: `ไม่พบพัสดุ ${parcelId}` }], accessToken)
+  }
+
+  await reply(replyToken, [generateKerryTrackingFlexMessage(parcelTracking)], accessToken)
+}
+
+/**
+ * Generate Kerry tracking flex message
+ */
 const generateKerryTrackingFlexMessage = (payload: KerryTrackingPayload): FlexMessage => {
   const latestStatus = payload.status[0]
   return {
     type: 'flex',
-    altText: `[Kerry] พัสดุของคุณ ${payload.shipment.consignment} มีการเปลี่ยนแปลงสถานะ ${latestStatus.description}`,
+    altText: `[Kerry] พัสดุของคุณ ${payload.shipment.consignment} มีสถานะ ${latestStatus.description}`,
     contents: getKerryTrackingFlexMessage(payload),
   }
 }
