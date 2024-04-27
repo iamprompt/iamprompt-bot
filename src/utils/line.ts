@@ -1,18 +1,46 @@
 import { createHmac } from 'node:crypto'
 
 import { Message } from '@line/bot-sdk'
+import axios from 'axios'
 
-const CHANNEL_SECRET = process.env.LINE_CHANNEL_SECRET
+import { LINEAccessToken, LINEProfile } from '@/types/line'
 
-export const verifySignature = (signature: string, body: any, secret?: string) => {
-  const channelSecret = secret || CHANNEL_SECRET
+const LINEApiInstance = axios.create({
+  baseURL: 'https://api.line.me',
+})
 
-  if (!channelSecret) {
-    throw new Error('LINE_CHANNEL_SECRET is not provided')
+export const verifySignature = (signature: string, body: any, secret: string) => {
+  if (!secret) throw new Error('Channel secret is missing')
+  const hash = createHmac('sha256', secret).update(JSON.stringify(body)).digest('base64').toString()
+  return hash === signature
+}
+
+export const getStatelessToken = async (channelId: string, channelSecret: string) => {
+  const { data } = await LINEApiInstance<LINEAccessToken>({
+    method: 'POST',
+    url: '/oauth2/v3/token',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    data: new URLSearchParams({
+      grant_type: 'client_credentials',
+      client_id: channelId,
+      client_secret: channelSecret,
+    }),
+  })
+
+  if (!data.access_token) {
+    throw new Error('Failed to get LINE access token')
   }
 
-  const hash = createHmac('sha256', channelSecret).update(JSON.stringify(body)).digest('base64').toString()
-  return hash === signature
+  return data.access_token
+}
+
+export const getProfileByUserId = async (userId: string, accessToken: string) => {
+  const { data } = await LINEApiInstance<LINEProfile>({
+    method: 'GET',
+    url: `/v2/bot/profile/${userId}`,
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  return data
 }
 
 export const sendNotify = async (message: string) => {
@@ -22,80 +50,52 @@ export const sendNotify = async (message: string) => {
 
   const token = process.env.LINE_NOTIFY_TOKEN
 
-  const res = await fetch('https://notify-api.line.me/api/notify', {
+  const { data, status } = await axios({
     method: 'POST',
+    url: 'https://notify-api.line.me/api/notify',
     headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
       Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
     },
-    body: new URLSearchParams({
-      message,
-    }),
+    data: new URLSearchParams({ message }),
   })
 
-  if (!res.ok) {
+  if (!data || status !== 200) {
     throw new Error('LINE Notify failed')
   }
 
-  const result = await res.json()
-
-  return result
+  return data
 }
 
-export const reply = async (replyToken: string, messages: Message[]) => {
-  if (!process.env.LINE_CHANNEL_ACCESS_TOKEN) {
-    throw new Error('Missing LINE_CHANNEL_ACCESS_TOKEN env')
-  }
-
-  const token = process.env.LINE_CHANNEL_ACCESS_TOKEN
-
-  const res = await fetch('https://api.line.me/v2/bot/message/reply', {
+export const reply = async (replyToken: string, messages: Message[], token: string) => {
+  const { data, status } = await LINEApiInstance({
     method: 'POST',
+    url: '/v2/bot/message/reply',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({
-      replyToken,
-      messages,
-    }),
+    data: { replyToken, messages },
   })
 
-  const result = await res.json()
-
-  if (!res.ok) {
-    console.log(result)
+  if (!data || status !== 200) {
     throw new Error('LINE Reply failed')
   }
 
-  return result
+  return data
 }
 
-export const push = async (to: string, messages: Message[]) => {
-  if (!process.env.LINE_CHANNEL_ACCESS_TOKEN) {
-    throw new Error('Missing LINE_CHANNEL_ACCESS_TOKEN env')
-  }
-
-  const token = process.env.LINE_CHANNEL_ACCESS_TOKEN
-
-  const res = await fetch('https://api.line.me/v2/bot/message/push', {
+export const push = async (to: string, messages: Message[], token: string) => {
+  const { data, status } = await LINEApiInstance({
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({
-      to,
-      messages,
-    }),
+    url: '/v2/bot/message/push',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    data: { to, messages },
   })
 
-  const result = await res.json()
-
-  if (!res.ok) {
-    console.log(result)
+  if (!data || status !== 200) {
     throw new Error('LINE Push failed')
   }
 
-  return result
+  return data
 }

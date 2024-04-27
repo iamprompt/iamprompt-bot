@@ -1,12 +1,13 @@
 {
   "name": "iamprompt-bot",
-  "version": "1.0.50",
+  "version": "1.0.0",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "bun run --watch src/index.ts"
   },
   "dependencies": {
     "@elysiajs/cron": "1.0.3",
+    "axios": "^1.6.8",
     "consola": "^3.2.3",
     "dayjs": "^1.11.10",
     "elysia": "latest",

@@ -2,7 +2,7 @@ import { FlexMessage } from '@line/bot-sdk'
 import consola from 'consola'
 
 import { getKerryTrackingFlexMessage } from '@/data/line/template/kerryTrackingTemplate'
-import { ParcelTracking } from '@/db/models'
+import { LineBot, ParcelTracking } from '@/db/models'
 import { KerryTrackingPayload } from '@/types/parcel/kerry'
 import { push } from '@/utils/line'
 import { getKerryTracking } from '@/utils/parcel/kerry'
@@ -20,6 +20,17 @@ export const UpdateParcelKerryJob = async () => {
     })
 
     consola.info(`[Kerry] ${parcelToUpdate.length} parcel(s) to update`)
+
+    const destinationBotIdsSet = new Set(parcelToUpdate.map((parcel) => parcel.line_destination_bot_id))
+    const destinationBotIds = Array.from(destinationBotIdsSet)
+
+    const destinationBotTokenMap = new Map<string, string>()
+    for (const destinationBotId of destinationBotIds) {
+      const destinationBot = await LineBot.findOne({ bot_id: destinationBotId })
+      if (destinationBot) {
+        destinationBotTokenMap.set(destinationBot.bot_id, destinationBot.channel_access_token)
+      }
+    }
 
     for (const parcel of parcelToUpdate) {
       try {
@@ -54,12 +65,23 @@ export const UpdateParcelKerryJob = async () => {
           continue
         }
 
+        const botAccessToken = destinationBotTokenMap.get(updatedParcel.line_destination_bot_id)
+
+        if (!botAccessToken) {
+          consola.error(`[Kerry] ${parcel.parcel_id} bot access token is missing`)
+          continue
+        }
+
         const isStatusChanged = updatedPayload.status.length !== previousPayload.status.length
         if (isStatusChanged) {
           consola.info(`[Kerry] ${parcel.parcel_id} status changed`)
           if (updatedParcel.line_destination_user_id) {
             consola.info(`[Kerry] ${parcel.parcel_id} send notification to ${updatedParcel.line_destination_user_id}`)
-            await push(updatedParcel.line_destination_user_id, [generateKerryTrackingFlexMessage(updatedPayload)])
+            await push(
+              updatedParcel.line_destination_user_id,
+              [generateKerryTrackingFlexMessage(updatedPayload)],
+              botAccessToken,
+            )
           }
         }
       } catch (error) {
