@@ -4,7 +4,7 @@ import consola from 'consola'
 import { getKerryTrackingFlexMessage } from '@/data/line/template/kerryTrackingTemplate'
 import { LineBot, ParcelTracking } from '@/db/models'
 import { KerryTrackingPayload } from '@/types/parcel/kerry'
-import { push, reply } from '@/utils/line'
+import { getStatelessToken, push, reply } from '@/utils/line'
 import { getKerryTracking } from '@/utils/parcel/kerry'
 
 /**
@@ -21,14 +21,19 @@ export const UpdateParcelKerryJob = async () => {
 
     consola.info(`[Kerry] ${parcelToUpdate.length} parcel(s) to update`)
 
-    const destinationBotIdsSet = new Set(parcelToUpdate.map((parcel) => parcel.line_destination_bot_id))
+    const destinationBotIdsSet = new Set(
+      parcelToUpdate.flatMap((parcel) => parcel.destinations.map((destination) => destination.bot_id)),
+    )
     const destinationBotIds = Array.from(destinationBotIdsSet)
 
     const destinationBotTokenMap = new Map<string, string>()
     for (const destinationBotId of destinationBotIds) {
+      if (destinationBotTokenMap.has(destinationBotId)) continue
+
       const destinationBot = await LineBot.findOne({ bot_id: destinationBotId })
       if (destinationBot) {
-        destinationBotTokenMap.set(destinationBot.bot_id, destinationBot.channel_access_token)
+        const token = await getStatelessToken(destinationBot.channel_id, destinationBot.channel_secret)
+        destinationBotTokenMap.set(destinationBot.bot_id, token)
       }
     }
 
@@ -67,23 +72,21 @@ export const UpdateParcelKerryJob = async () => {
           continue
         }
 
-        const botAccessToken = destinationBotTokenMap.get(updatedParcel.line_destination_bot_id)
+        for (const destination of parcel.destinations) {
+          const botAccessToken = destinationBotTokenMap.get(destination.bot_id)
 
-        if (!botAccessToken) {
-          consola.error(`[Kerry] ${parcel.parcel_id} bot access token is missing`)
-          continue
-        }
+          if (!botAccessToken) {
+            consola.error(`[Kerry] ${parcel.parcel_id} bot access token is missing`)
+            continue
+          }
 
-        const isStatusChanged = updatedPayload.status.length !== previousPayload.status.length
-        if (isStatusChanged) {
-          consola.info(`[Kerry] ${parcel.parcel_id} status changed`)
-          if (updatedParcel.line_destination_user_id) {
-            consola.info(`[Kerry] ${parcel.parcel_id} send notification to ${updatedParcel.line_destination_user_id}`)
-            await push(
-              updatedParcel.line_destination_user_id,
-              [generateKerryTrackingFlexMessage(updatedPayload)],
-              botAccessToken,
-            )
+          const isStatusChanged = updatedPayload.status.length !== previousPayload.status.length
+          if (isStatusChanged) {
+            consola.info(`[Kerry] ${parcel.parcel_id} status changed`)
+            if (destination.user_id) {
+              consola.info(`[Kerry] ${parcel.parcel_id} send notification to ${destination.user_id}`)
+              await push(destination.user_id, [generateKerryTrackingFlexMessage(updatedPayload)], botAccessToken)
+            }
           }
         }
       } catch (error) {
