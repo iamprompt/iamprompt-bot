@@ -43,12 +43,14 @@ export const UpdateParcelKerryJob = async () => {
 
         const latestStatus = payload.status[0]
 
+        const isDelivered = latestStatus.code === 'POD'
+
         const updatedParcel = await ParcelTracking.findByIdAndUpdate(
           parcel._id,
           {
             payload,
-            is_delivered: latestStatus.code === 'POD',
-            is_final: latestStatus.code === 'POD',
+            is_delivered: isDelivered,
+            is_final: isDelivered,
           },
           { new: true },
         )
@@ -114,5 +116,9 @@ const generateKerryTrackingFlexMessage = (payload: KerryTrackingPayload): FlexMe
     type: 'flex',
     altText: `[Kerry] พัสดุของคุณ ${payload.shipment.consignment} มีสถานะ ${latestStatus.description}`,
     contents: getKerryTrackingFlexMessage(payload),
+    sender: {
+      name: 'Kerry Tracking',
+      iconUrl: 'https://bucket.ex10.tech/images/6c9375d2-0512-11ef-808f-0242ac12000b/originalContentUrl.jpg',
+    },
   }
 }
