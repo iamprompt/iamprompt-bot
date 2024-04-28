@@ -41,8 +41,6 @@ export const lineController = new Elysia({
 
               const [intent, postbackObj] = definePostbackIntent(postback.data)
 
-              console.log(intent, postbackObj)
-
               switch (intent) {
                 case PostbackIntent.KERRY_TRACKING_NOTIFY_SUBSCRIBE:
                   await HandleSubscribeParcelKerryStatus(
