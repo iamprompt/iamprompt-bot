@@ -34,11 +34,11 @@ export const getStatelessToken = async (channelId: string, channelSecret: string
   return data.access_token
 }
 
-export const getProfileByUserId = async (userId: string, accessToken: string) => {
+export const getProfileByUserId = async (token: string, userId: string) => {
   const { data } = await LINEApiInstance<LINEProfile>({
     method: 'GET',
     url: `/v2/bot/profile/${userId}`,
-    headers: { Authorization: `Bearer ${accessToken}` },
+    headers: { Authorization: `Bearer ${token}` },
   })
   return data
 }
@@ -67,7 +67,7 @@ export const sendNotify = async (message: string) => {
   return data
 }
 
-export const reply = async (replyToken: string, messages: Message[], token: string) => {
+export const reply = async (token: string, replyToken: string, messages: Message[]) => {
   const { data, status } = await LINEApiInstance({
     method: 'POST',
     url: '/v2/bot/message/reply',
@@ -85,7 +85,7 @@ export const reply = async (replyToken: string, messages: Message[], token: stri
   return data
 }
 
-export const push = async (to: string, messages: Message[], token: string) => {
+export const push = async (token: string, to: string, messages: Message[]) => {
   const { data, status } = await LINEApiInstance({
     method: 'POST',
     url: '/v2/bot/message/push',
@@ -98,4 +98,17 @@ export const push = async (to: string, messages: Message[], token: string) => {
   }
 
   return data
+}
+
+export const displayLoading = async (token: string, chatId: string, duration: number = 20) => {
+  const { status } = await LINEApiInstance({
+    method: 'POST',
+    url: '/v2/bot/chat/loading/start',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    data: { chatId, loadingSeconds: duration },
+  })
+
+  if (status !== 202) {
+    throw new Error('LINE Loading failed')
+  }
 }

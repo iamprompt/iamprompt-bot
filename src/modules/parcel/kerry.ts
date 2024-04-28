@@ -1,11 +1,13 @@
-import { FlexMessage } from '@line/bot-sdk'
+import { EventSource, FlexMessage, QuickReplyItem } from '@line/bot-sdk'
 import consola from 'consola'
 
 import { getKerryTrackingFlexMessage } from '@/data/line/template/kerryTrackingTemplate'
 import { LineBot, ParcelTracking } from '@/db/models'
 import { KerryTrackingPayload } from '@/types/parcel/kerry'
-import { getStatelessToken, push, reply } from '@/utils/line'
+import { displayLoading, getStatelessToken, push, reply } from '@/utils/line'
 import { getKerryTracking } from '@/utils/parcel/kerry'
+
+import { getChatId, PostbackIntent } from '../webhook'
 
 /**
  * Cron job for update parcel status from Kerry
@@ -85,7 +87,13 @@ export const UpdateParcelKerryJob = async () => {
             consola.info(`[Kerry] ${parcel.parcel_id} status changed`)
             if (destination.user_id) {
               consola.info(`[Kerry] ${parcel.parcel_id} send notification to ${destination.user_id}`)
-              await push(destination.user_id, [generateKerryTrackingFlexMessage(updatedPayload)], botAccessToken)
+              await push(botAccessToken, destination.user_id, [
+                generateKerryTrackingFlexMessage(updatedPayload, {
+                  recheckAction: false,
+                  subscribeAction: false,
+                  unsubscribeAction: true,
+                }),
+              ])
             }
           }
         }
@@ -98,23 +106,213 @@ export const UpdateParcelKerryJob = async () => {
   }
 }
 
-export const HandleQueryParcelKerryStatus = async (text: string, replyToken: string, accessToken: string) => {
-  const parcelId = text.replace('[Kerry]', '').trim()
+export const HandleQueryParcelKerryStatus = async (
+  accessToken: string,
+  replyToken: string,
+  text: string,
+  destinationBotId: string,
+  chatId: string,
+) => {
+  try {
+    await displayLoading(accessToken, chatId)
 
-  const parcelTracking = await getKerryTracking(parcelId)
+    const parcelId = text.replace('[Kerry]', '').trim()
 
-  if (!parcelTracking) {
-    await reply(replyToken, [{ type: 'text', text: `ไม่พบพัสดุ ${parcelId}` }], accessToken)
+    const parcelTracking = await getKerryTracking(parcelId)
+    const isDelivered = parcelTracking?.status[0].code === 'POD'
+
+    if (!parcelTracking) {
+      await reply(accessToken, replyToken, [{ type: 'text', text: `ไม่พบพัสดุ ${parcelId}` }])
+    }
+
+    const userSubscribed = await isUserSubscribed(parcelId, destinationBotId, chatId)
+
+    await reply(accessToken, replyToken, [
+      generateKerryTrackingFlexMessage(parcelTracking, {
+        recheckAction: !isDelivered,
+        subscribeAction: !userSubscribed && !isDelivered,
+        unsubscribeAction: userSubscribed,
+      }),
+    ])
+  } catch (error) {
+    console.error(error)
   }
+}
 
-  await reply(replyToken, [generateKerryTrackingFlexMessage(parcelTracking)], accessToken)
+export const HandleSubscribeParcelKerryStatus = async (
+  accessToken: string,
+  replyToken: string,
+  parcelId: string,
+  destinationBotId: string,
+  source: EventSource,
+) => {
+  try {
+    const chatId = getChatId(source)
+    chatId && (await displayLoading(accessToken, chatId))
+
+    const payload = await getKerryTracking(parcelId)
+
+    if (!payload) {
+      await reply(accessToken, replyToken, [{ type: 'text', text: `ไม่พบพัสดุ ${parcelId}` }])
+    }
+
+    const latestStatus = payload.status[0]
+    const isDelivered = latestStatus.code === 'POD'
+
+    if (isDelivered) {
+      await reply(accessToken, replyToken, [
+        {
+          type: 'text',
+          text: `ไม่สามารถสมัครแจ้งเตือนพัสดุ ${parcelId} เนื่องจากพัสดุส่งสำเร็จแล้ว`,
+        },
+      ])
+      return
+    }
+
+    if (!chatId) {
+      await reply(accessToken, replyToken, [{ type: 'text', text: 'ไม่สามารถสมัครแจ้งเตือนพัสดุ' }])
+      return
+    }
+
+    if (await isUserSubscribed(parcelId, destinationBotId, chatId)) {
+      await reply(accessToken, replyToken, [{ type: 'text', text: `คุณได้สมัครแจ้งเตือนพัสดุ ${parcelId} แล้ว` }])
+      return
+    }
+
+    await ParcelTracking.updateOne(
+      { carrier: 'KERRY', parcel_id: parcelId },
+      {
+        payload,
+        is_delivered: isDelivered,
+        is_final: isDelivered,
+        $addToSet: {
+          destinations: {
+            bot_id: destinationBotId,
+            user_id: chatId,
+          },
+        },
+      },
+      { upsert: true },
+    )
+
+    await reply(accessToken, replyToken, [
+      {
+        type: 'text',
+        text: `สมัครแจ้งเตือนพัสดุ ${parcelId} สำเร็จ`,
+      },
+    ])
+  } catch (error) {
+    console.error(error)
+  }
+}
+
+export const HandleUnsubscribeParcelKerryStatus = async (
+  accessToken: string,
+  replyToken: string,
+  parcelId: string,
+  destinationBotId: string,
+  source: EventSource,
+) => {
+  try {
+    const chatId = getChatId(source)
+    chatId && (await displayLoading(accessToken, chatId))
+
+    if (!chatId) {
+      await reply(accessToken, replyToken, [{ type: 'text', text: 'ไม่สามารถยกเลิกการแจ้งเตือนพัสดุ' }])
+      return
+    }
+
+    const parcel = await ParcelTracking.findOneAndUpdate(
+      { carrier: 'KERRY', parcel_id: parcelId },
+      {
+        $pull: {
+          destinations: {
+            bot_id: destinationBotId,
+            user_id: chatId,
+          },
+        },
+      },
+      { new: true },
+    )
+
+    if (!parcel) {
+      await reply(accessToken, replyToken, [{ type: 'text', text: `ไม่พบพัสดุ ${parcelId}` }])
+      return
+    }
+
+    await reply(accessToken, replyToken, [
+      {
+        type: 'text',
+        text: `ยกเลิกการแจ้งเตือนพัสดุ ${parcelId} สำเร็จ`,
+      },
+    ])
+  } catch (error) {
+    console.error(error)
+  }
+}
+
+const isUserSubscribed = async (parcelId: string, destinationBotId: string, chatId: string) => {
+  const existingParcel = await ParcelTracking.findOne({ carrier: 'KERRY', parcel_id: parcelId })
+  if (!existingParcel) return false
+
+  return existingParcel.destinations.some(
+    (destination) => destination.bot_id === destinationBotId && destination.user_id === chatId,
+  )
+}
+
+type GenerateKerryTrackingFlexMessageOptions = {
+  recheckAction?: boolean
+  subscribeAction?: boolean
+  unsubscribeAction?: boolean
 }
 
 /**
  * Generate Kerry tracking flex message
  */
-const generateKerryTrackingFlexMessage = (payload: KerryTrackingPayload): FlexMessage => {
+const generateKerryTrackingFlexMessage = (
+  payload: KerryTrackingPayload,
+  {
+    recheckAction = true,
+    subscribeAction = true,
+    unsubscribeAction = false,
+  }: GenerateKerryTrackingFlexMessageOptions = {},
+): FlexMessage => {
   const latestStatus = payload.status[0]
+  const quickReplyItems: Array<QuickReplyItem> = []
+
+  if (recheckAction) {
+    quickReplyItems.push({
+      type: 'action',
+      action: {
+        type: 'message',
+        label: 'ตรวจสอบอีกครั้ง',
+        text: `[Kerry] ${payload.shipment.consignment}`,
+      },
+    })
+  }
+
+  if (subscribeAction) {
+    quickReplyItems.push({
+      type: 'action',
+      action: {
+        type: 'postback',
+        label: 'เปิดการแจ้งเตือน',
+        data: `action=${PostbackIntent.KERRY_TRACKING_NOTIFY_SUBSCRIBE}&parcelId=${payload.shipment.consignment}`,
+      },
+    })
+  }
+
+  if (unsubscribeAction) {
+    quickReplyItems.push({
+      type: 'action',
+      action: {
+        type: 'postback',
+        label: 'ยกเลิกการแจ้งเตือน',
+        data: `action=${PostbackIntent.KERRY_TRACKING_NOTIFY_UNSUBSCRIBE}&parcelId=${payload.shipment.consignment}`,
+      },
+    })
+  }
+
   return {
     type: 'flex',
     altText: `[Kerry] พัสดุของคุณ ${payload.shipment.consignment} มีสถานะ ${latestStatus.description}`,
@@ -123,5 +321,6 @@ const generateKerryTrackingFlexMessage = (payload: KerryTrackingPayload): FlexMe
       name: 'Kerry Tracking',
       iconUrl: 'https://bucket.ex10.tech/images/6c9375d2-0512-11ef-808f-0242ac12000b/originalContentUrl.jpg',
     },
+    quickReply: quickReplyItems.length ? { items: quickReplyItems } : undefined,
   }
 }
