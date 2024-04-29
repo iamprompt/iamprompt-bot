@@ -66,7 +66,7 @@ export const lineWebhookValidator = ({ log = true }: LineWebhookValidatorConfig 
         for (const userId of webhookUserIds) {
           if (updatedUserIds.includes(userId)) continue
 
-          const user = await getProfileByUserId(userId, accessToken)
+          const user = await getProfileByUserId(accessToken, userId)
           if (!user) continue
 
           await LineBotUser.updateOne(
