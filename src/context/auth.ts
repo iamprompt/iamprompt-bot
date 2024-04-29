@@ -1,28 +1,33 @@
 import Elysia, { t } from 'elysia'
 
+import { Role } from '@/db/models'
 import { lucia } from '@/modules/auth'
 
-export const authValidator = new Elysia({ name: 'authValidator' })
-  .guard({
-    cookie: t.Object({ [lucia.sessionCookieName]: t.String() }),
-  })
-  .derive({ as: 'scoped' }, async ({ cookie: { auth_session } }) => {
-    if (!auth_session) {
-      return { user: null, session: null }
-    }
+type AuthValidatorOptions = {
+  roles?: Role[]
+}
 
-    const { user, session } = await lucia.validateSession(auth_session.value)
+export const authValidator = ({ roles = [Role.ADMIN] }: AuthValidatorOptions = {}) => {
+  return new Elysia({ name: 'authValidator' })
+    .guard({
+      cookie: t.Object({ [lucia.sessionCookieName]: t.String() }),
+    })
+    .derive({ as: 'scoped' }, async ({ cookie: { auth_session } }) => {
+      if (!auth_session) {
+        return { user: null, session: null }
+      }
 
-    console.log(user, session)
+      const { user, session } = await lucia.validateSession(auth_session.value)
 
-    return { user, session }
-  })
-  .onBeforeHandle({ as: 'scoped' }, async ({ set, user, session }) => {
-    if (!user || !session) {
-      set.status = 'Unauthorized'
-      return { message: 'Unauthorized' }
-    }
-  })
-  .resolve({ as: 'scoped' }, async ({ user, session }) => {
-    return { user: user!, session: session! }
-  })
+      return { user, session }
+    })
+    .onBeforeHandle({ as: 'scoped' }, async ({ set, user, session }) => {
+      if (!user || !session || !roles.some((role) => user.roles.includes(role))) {
+        set.status = 'Unauthorized'
+        return { message: 'Unauthorized' }
+      }
+    })
+    .resolve({ as: 'scoped' }, async ({ user, session }) => {
+      return { user: user!, session: session! }
+    })
+}

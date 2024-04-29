@@ -1,9 +1,15 @@
 import { Document, model, Schema } from 'mongoose'
 
+export enum Role {
+  USER = 'USER',
+  ADMIN = 'ADMIN',
+}
+
 export type User = {
   email: string
   password: string
   name: string
+  roles: Role[]
   created_at: Date
   updated_at: Date
 } & Document
@@ -14,6 +20,7 @@ const userSchema = new Schema(
     email: { type: String, required: true },
     password: { type: String },
     name: { type: String },
+    roles: { type: [String], default: [Role.USER] },
     created_at: { type: Date, default: Date.now },
     updated_at: { type: Date, default: Date.now },
   },

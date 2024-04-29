@@ -1,5 +1,7 @@
 import { Lucia } from 'lucia'
 
+import { Role } from '@/db/models'
+
 import { adapter } from './adapter'
 
 declare module 'lucia' {
@@ -11,6 +13,7 @@ declare module 'lucia' {
 
 interface DatabaseUserAttributes {
   name: string
+  roles: Role[]
 }
 
 export const lucia = new Lucia(adapter, {
@@ -23,6 +26,7 @@ export const lucia = new Lucia(adapter, {
   getUserAttributes: (attributes) => {
     return {
       name: attributes.name,
+      roles: attributes.roles,
     }
   },
 })
