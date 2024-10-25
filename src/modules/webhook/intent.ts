@@ -2,6 +2,8 @@ import { EventSource, TextEventMessage } from '@line/bot-sdk'
 
 export enum TextIntent {
   KERRY_TRACKING_STATUS = 'KERRY_TRACKING_STATUS',
+  BEACON_SUBSCRIBE = 'BEACON_SUBSCRIBE',
+  BEACON_UNSUBSCRIBE = 'BEACON_UNSUBSCRIBE',
 }
 
 export enum PostbackIntent {
@@ -17,6 +19,14 @@ type IntentPostbackObject = {
 export const defineTextIntent = (message: TextEventMessage): TextIntent | null => {
   if (isTextStartWith(message.text, 'kerry')) {
     return TextIntent.KERRY_TRACKING_STATUS
+  }
+
+  if (isTextMatch(message.text, 'LINE Beacon Verbose')) {
+    return TextIntent.BEACON_SUBSCRIBE
+  }
+
+  if (isTextMatch(message.text, 'LINE Beacon Silent')) {
+    return TextIntent.BEACON_UNSUBSCRIBE
   }
 
   return null
@@ -48,6 +58,14 @@ export const definePostbackIntent = (postback: string) => {
 export const isTextStartWith = (text: string, keyword: string): boolean => {
   const regex = new RegExp(`^\\[${keyword}\\]`, 'i')
   return text.search(regex) !== -1
+}
+
+export const isTextMatch = (text: string, keyword: string): boolean => {
+  const textNormalized = text.toLowerCase()
+  const keywordNormalized = keyword.toLowerCase()
+
+  const regex = new RegExp(`^${keywordNormalized}$`, 'i')
+  return textNormalized.search(regex) !== -1
 }
 
 export const getChatId = (source: EventSource): string => {
